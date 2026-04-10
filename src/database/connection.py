@@ -12,12 +12,18 @@ if db_url.startswith("postgres://"):
 elif db_url.startswith("postgresql://") and "+asyncpg" not in db_url:
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# 2. Caminhos dos Certificados (Ajustados para a raiz da aplicação na Square)
-# Se os arquivos estiverem na raiz do seu projeto, use este caminho:
+# 2. Caminhos dos Certificados conforme a sua imagem
+# O BASE_DIR os.getcwd() pega a raiz onde está o main.py
 BASE_DIR = os.getcwd() 
-CA_CERT = os.path.join(BASE_DIR, "ca.crt")
-CLIENT_CERT = os.path.join(BASE_DIR, "client.crt")
-CLIENT_KEY = os.path.join(BASE_DIR, "client.key")
+
+CA_CERT = os.path.join(BASE_DIR, "ca-certificate.crt") # Ajustado
+CLIENT_CERT = os.path.join(BASE_DIR, "certificate.pem") # Ajustado
+CLIENT_KEY = os.path.join(BASE_DIR, "private-key.key") # Ajustado
+
+# Verificação extra para o log da Square Cloud
+for file in [CA_CERT, CLIENT_CERT, CLIENT_KEY]:
+    if not os.path.exists(file):
+        logger.error(f"❌ ARQUIVO FALTANDO NA SQUARE: {file}")
 
 # 3. Configuração do Contexto SSL para Asyncpg
 def get_ssl_context():
