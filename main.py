@@ -17,36 +17,31 @@ logger.add(sys.stdout, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <leve
 logger.add("logs/bot.log", rotation="10 MB", retention="10 days", level="INFO")
 
 async def main():
-    logger.info("🚀 Iniciando Bot de Salas Free Fire Profissional (V19 Redis Final Fix)...")
+    logger.info("🚀 Iniciando Bot de Salas Free Fire Profissional (V35 Square Cloud Final)...")
     
     # Inicializar Banco de Dados
-    try:
-        await init_db()
-    except Exception as e:
-        logger.error(f"❌ Erro ao inicializar banco de dados: {e}")
+    await init_db()
 
     # Configuração de FSM Storage (Redis para Escala, Memory para Fallback)
     storage = MemoryStorage()
     
-    # Prioriza REDIS_URL do Railway
     if settings.REDIS_URL:
         try:
-            # Cria a instância do Redis explicitamente a partir da URL
-            # Isso garante que ele não tente conectar ao localhost
+            # Configuração robusta para Redis na Square Cloud
+            # rediss:// força SSL, mas precisamos desabilitar a verificação de certificado
             redis_instance = Redis.from_url(
                 settings.REDIS_URL, 
                 decode_responses=True,
-                socket_timeout=5,
-                socket_connect_timeout=5,
+                socket_timeout=10,
+                socket_connect_timeout=10,
                 ssl_cert_reqs=None # Ignorar verificação SSL para Square Cloud
             )
             
-            # Testa a conexão de forma real
+            # Testa a conexão
             await redis_instance.ping()
             
-            # Passa a instância já conectada para o RedisStorage
             storage = RedisStorage(redis=redis_instance)
-            logger.info(f"✅ FSM Storage: Redis conectado com sucesso em {settings.REDIS_URL.split('@')[-1]}")
+            logger.info(f"✅ FSM Storage: Redis conectado com sucesso.")
         except Exception as e:
             logger.warning(f"⚠️ FSM Storage: Falha ao conectar no Redis ({str(e)}). Usando Memória.")
     else:
@@ -69,10 +64,9 @@ async def main():
         logger.info("🤖 Bot online e aguardando comandos.")
         await dp.start_polling(bot)
     finally:
-        # Fechar cliente da API Nix de forma limpa
+        # Fechar conexões de forma limpa
         await nix_api.close()
         await bot.session.close()
-        # Fecha conexão com Redis se existir
         if isinstance(storage, RedisStorage):
             await storage.redis.close()
 
