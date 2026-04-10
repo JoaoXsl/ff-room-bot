@@ -1,0 +1,6 @@
+MAIN: main.py
+DISPLAY_NAME: Salas Bot
+DESCRIPTION: Bot de Salas Telegram
+MEMORY: 1012
+VERSION: python-3.11.9
+AUTORESTART: True
