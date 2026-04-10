@@ -87,8 +87,11 @@ class KeyService:
 
     @staticmethod
     async def redeem_key(session: AsyncSession, user_id: int, code: str) -> Tuple[bool, str]:
+        # Limpa o código (remove espaços e coloca em maiúsculo)
+        clean_code = code.strip().upper()
+        
         # Lock na chave para evitar uso duplo simultâneo
-        stmt = select(Key).where(Key.code == code, Key.is_used == False).with_for_update()
+        stmt = select(Key).where(Key.code == clean_code, Key.is_used == False).with_for_update()
         result = await session.execute(stmt)
         key = result.scalar_one_or_none()
         
@@ -110,7 +113,7 @@ class KeyService:
             user_id=user_id,
             amount=key.value,
             type='deposit',
-            description=f"Resgate de key: {code}"
+            description=f"Resgate de key: {clean_code}"
         )
         session.add(transaction)
         

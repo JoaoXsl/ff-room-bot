@@ -67,7 +67,7 @@ async def admin_process_gen_key(message: types.Message, state: FSMContext, sessi
         
         keys_text = "\n".join(keys)
         await message.answer(
-            f"✅ <b>{amount} KEYS GERADAS (Saldo: {balance})</b>\n\n{keys_text}",
+            f"✅ <b>{amount} KEYS GERADAS (Saldo: {balance})</b>\n\n{keys_text}\n\n<i>Clique no código acima para copiar.</i>",
             reply_markup=get_admin_menu(),
             parse_mode="HTML"
         )
@@ -143,7 +143,7 @@ async def cmd_gerarkey(message: types.Message, session: AsyncSession):
             
         await session.commit()
         
-        await message.answer(f"✅ <b>{amount} Keys Geradas (Saldo: {balance}):</b>\n\n" + "\n".join(keys), parse_mode="HTML")
+        await message.answer(f"✅ <b>{amount} Keys Geradas (Saldo: {balance}):</b>\n\n" + "\n".join(keys) + "\n\n<i>Clique no código acima para copiar.</i>", parse_mode="HTML")
     except Exception as e:
         logger.error(f"Erro no comando /gerarkey: {e}")
         await message.answer(f"❌ Erro ao processar o comando. Verifique os parâmetros.")
