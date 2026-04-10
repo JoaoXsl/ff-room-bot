@@ -2,25 +2,25 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from config.settings import settings
 from src.database.models import Base
 from loguru import logger
-import ssl
+import os
 
-def get_ssl_context():
-    """
-    Cria um contexto SSL para o asyncpg.
-    Na Square Cloud, os certificados são autoassinados, então desabilitamos a verificação.
-    """
-    # Se a URL contiver 'localhost' ou '127.0.0.1', provavelmente é local e não precisa de SSL
-    if "localhost" in settings.DATABASE_URL or "127.0.0.1" in settings.DATABASE_URL:
-        return None
-        
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
+# Garante que a URL do banco de dados use o driver asyncpg, corrigindo o erro de driver síncrono.
+db_url = settings.DATABASE_URL
+if db_url.startswith("postgres://"):
+    db_url = f"postgresql+asyncpg://{db_url[len("postgres://"):]}"
+elif db_url.startswith("postgresql://"):
+    db_url = f"postgresql+asyncpg://{db_url[len("postgresql://"):]}"
 
-# Configuração do Engine com Pool de Conexões Robusto
+# Define os caminhos para os certificados SSL
+# Assumimos que os arquivos ca.crt, client.crt e client.key estão na raiz do projeto
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CA_CERT_PATH = os.path.join(os.path.dirname(BASE_DIR), "ca.crt")
+CLIENT_CERT_PATH = os.path.join(os.path.dirname(BASE_DIR), "client.crt")
+CLIENT_KEY_PATH = os.path.join(os.path.dirname(BASE_DIR), "client.key")
+
+# Configuração do Engine com Pool de Conexões Robusto e certificados SSL
 engine = create_async_engine(
-    settings.DATABASE_URL, 
+    db_url, 
     echo=False,
     pool_size=10,
     max_overflow=20,
@@ -29,7 +29,10 @@ engine = create_async_engine(
     connect_args={
         "server_settings": {"application_name": "FF_Room_Bot"},
         "command_timeout": 60,
-        "ssl": get_ssl_context()
+        "sslmode": "require",
+        "sslrootcert": CA_CERT_PATH,
+        "sslcert": CLIENT_CERT_PATH,
+        "sslkey": CLIENT_KEY_PATH
     }
 )
 
@@ -43,8 +46,7 @@ async def init_db():
         logger.info("✅ Banco de dados inicializado com sucesso.")
     except Exception as e:
         logger.error(f"❌ Erro ao inicializar banco de dados: {str(e)}")
-        # Não levantamos o erro aqui para permitir que o bot tente iniciar 
-        # mesmo se o banco falhar momentaneamente (o middleware tratará depois)
+        raise e
 
 async def get_session() -> AsyncSession:
     async with async_session() as session:
