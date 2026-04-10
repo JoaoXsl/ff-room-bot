@@ -2,6 +2,13 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from config.settings import settings
 from src.database.models import Base
 from loguru import logger
+import ssl # Import ssl module
+
+# Criar um contexto SSL que desabilita a verificação de certificado
+# Isso é necessário para lidar com certificados autoassinados da Square Cloud
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
 
 # Configuração do Engine com Pool de Conexões Robusto para Alta Escala
 # pool_size: 20 conexões fixas abertas
@@ -18,7 +25,7 @@ engine = create_async_engine(
     connect_args={
         "server_settings": {"application_name": "FF_Room_Bot"},
         "command_timeout": 30,
-        "ssl": True # Forçar uso de SSL para Square Cloud
+        "ssl": ssl_context # Usar o contexto SSL personalizado
     }
 )
 
