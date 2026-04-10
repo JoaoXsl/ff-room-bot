@@ -17,8 +17,7 @@ engine = create_async_engine(
     pool_pre_ping=True,
     connect_args={
         "server_settings": {"application_name": "FF_Room_Bot"},
-        "command_timeout": 30,
-        "ssl": True # Solução testada e funcional para Square Cloud
+        "command_timeout": 30
     }
 )
 
