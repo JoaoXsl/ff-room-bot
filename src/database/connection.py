@@ -3,24 +3,35 @@ from config.settings import settings
 from src.database.models import Base
 from loguru import logger
 import os
-import ssl # Importação necessária para o SSL
+import ssl
 
-# Garante que a URL do banco de dados use o driver asyncpg
+# 1. Tratamento da URL
 db_url = settings.DATABASE_URL
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
 elif db_url.startswith("postgresql://") and "+asyncpg" not in db_url:
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# Configuração do contexto SSL para Asyncpg
-# Isso resolve o erro de [SSL: CERTIFICATE_VERIFY_FAILED]
-ssl_context = ssl.create_default_context()
-ssl_context.check_hostname = False
-ssl_context.verify_mode = ssl.CERT_NONE
+# 2. Caminhos dos Certificados (Ajustados para a raiz da aplicação na Square)
+# Se os arquivos estiverem na raiz do seu projeto, use este caminho:
+BASE_DIR = os.getcwd() 
+CA_CERT = os.path.join(BASE_DIR, "ca.crt")
+CLIENT_CERT = os.path.join(BASE_DIR, "client.crt")
+CLIENT_KEY = os.path.join(BASE_DIR, "client.key")
 
-# Configuração do Engine
+# 3. Configuração do Contexto SSL para Asyncpg
+def get_ssl_context():
+    ctx = ssl.create_default_context(cafile=CA_CERT)
+    # Carrega o certificado do cliente e a chave privada
+    ctx.load_cert_chain(certfile=CLIENT_CERT, keyfile=CLIENT_KEY)
+    # Como é autoassinado, desativamos a verificação de hostname se necessário
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_REQUIRED # O servidor exige o certificado
+    return ctx
+
+# 4. Criação do Engine
 engine = create_async_engine(
-    db_url, 
+    db_url,
     echo=False,
     pool_size=10,
     max_overflow=20,
@@ -29,14 +40,13 @@ engine = create_async_engine(
     connect_args={
         "server_settings": {"application_name": "FF_Room_Bot"},
         "command_timeout": 60,
-        "ssl": ssl_context  # Aqui está a mudança chave!
+        "ssl": get_ssl_context() # Passamos o contexto completo aqui
     }
 )
 
 async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 async def init_db():
-    """Inicializa o banco de dados e cria as tabelas se não existirem."""
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
