@@ -63,7 +63,9 @@ async def admin_process_gen_key(message: types.Message, state: FSMContext, sessi
             key_code = await KeyService.generate_key(session, balance)
             keys.append(f"<code>{key_code}</code>")
         
+        # IMPORTANTE: Commit explícito para garantir a persistência no banco
         await session.commit()
+        logger.info(f"✅ {amount} keys persistidas no banco de dados com sucesso.")
         
         keys_text = "\n".join(keys)
         await message.answer(
@@ -74,6 +76,7 @@ async def admin_process_gen_key(message: types.Message, state: FSMContext, sessi
         await state.clear()
     except Exception as e:
         logger.error(f"Erro ao gerar keys: {e}")
+        await session.rollback()
         await message.answer("❌ Formato inválido. Use: <code>quantidade saldo</code>", reply_markup=get_back_button())
 
 @router.callback_query(F.data == "admin_users")
@@ -141,9 +144,12 @@ async def cmd_gerarkey(message: types.Message, session: AsyncSession):
             key_code = await KeyService.generate_key(session, balance)
             keys.append(f"<code>{key_code}</code>")
             
+        # IMPORTANTE: Commit explícito para garantir a persistência no banco
         await session.commit()
+        logger.info(f"✅ {amount} keys persistidas via comando /gerarkey.")
         
         await message.answer(f"✅ <b>{amount} Keys Geradas (Saldo: {balance}):</b>\n\n" + "\n".join(keys) + "\n\n<i>Clique no código acima para copiar.</i>", parse_mode="HTML")
     except Exception as e:
         logger.error(f"Erro no comando /gerarkey: {e}")
+        await session.rollback()
         await message.answer(f"❌ Erro ao processar o comando. Verifique os parâmetros.")

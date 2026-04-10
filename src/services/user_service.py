@@ -1,5 +1,6 @@
 import secrets
 import string
+import re
 from datetime import datetime
 from typing import Optional, List, Tuple
 from sqlalchemy import select, func, desc
@@ -83,12 +84,16 @@ class KeyService:
         new_key = Key(code=code, value=value)
         session.add(new_key)
         await session.flush() # Usa flush para garantir que a key seja adicionada à sessão sem fechar a transação
+        logger.info(f"🔑 Key gerada no banco: {code} (Saldo: {value})")
         return code
 
     @staticmethod
     async def redeem_key(session: AsyncSession, user_id: int, code: str) -> Tuple[bool, str]:
-        # Limpa o código (remove espaços e coloca em maiúsculo)
-        clean_code = code.strip().upper()
+        # Limpa o código (remove espaços, caracteres invisíveis e coloca em maiúsculo)
+        # Usa regex para manter apenas letras, números e o hífen
+        clean_code = re.sub(r'[^A-Z0-9\-]', '', code.strip().upper())
+        
+        logger.info(f"🎟️ Tentativa de resgate: Usuário {user_id} enviou '{code}', processado como '{clean_code}'")
         
         # Lock na chave para evitar uso duplo simultâneo
         stmt = select(Key).where(Key.code == clean_code, Key.is_used == False).with_for_update()
@@ -96,7 +101,17 @@ class KeyService:
         key = result.scalar_one_or_none()
         
         if not key:
-            return False, "Key inválida ou já utilizada."
+            # Verifica se a key existe mas já foi usada
+            check_stmt = select(Key).where(Key.code == clean_code)
+            check_result = await session.execute(check_stmt)
+            existing_key = check_result.scalar_one_or_none()
+            
+            if existing_key:
+                logger.warning(f"❌ Key '{clean_code}' já foi utilizada pelo usuário {existing_key.used_by}")
+                return False, "Esta key já foi utilizada."
+            else:
+                logger.warning(f"❌ Key '{clean_code}' não encontrada no banco de dados.")
+                return False, "Key inválida ou inexistente."
         
         # Lock no usuário para atualizar saldo
         user = await UserService.get_user(session, user_id, for_update=True)
@@ -118,4 +133,5 @@ class KeyService:
         session.add(transaction)
         
         await session.commit()
+        logger.info(f"✅ Key '{clean_code}' resgatada com sucesso pelo usuário {user_id}. +{key.value} salas.")
         return True, f"Key resgatada com sucesso! +{key.value} salas adicionadas."
