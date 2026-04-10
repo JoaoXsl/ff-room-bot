@@ -54,10 +54,16 @@ async def admin_process_gen_key(message: types.Message, state: FSMContext, sessi
         amount = int(parts[0])
         balance = int(parts[1])
         
+        if amount <= 0 or amount > 50:
+            await message.answer("❌ Quantidade deve ser entre 1 e 50.")
+            return
+            
         keys = []
         for _ in range(amount):
             key_code = await KeyService.generate_key(session, balance)
             keys.append(f"<code>{key_code}</code>")
+        
+        await session.commit()
         
         keys_text = "\n".join(keys)
         await message.answer(
@@ -66,7 +72,8 @@ async def admin_process_gen_key(message: types.Message, state: FSMContext, sessi
             parse_mode="HTML"
         )
         await state.clear()
-    except Exception:
+    except Exception as e:
+        logger.error(f"Erro ao gerar keys: {e}")
         await message.answer("❌ Formato inválido. Use: <code>quantidade saldo</code>", reply_markup=get_back_button())
 
 @router.callback_query(F.data == "admin_users")
@@ -112,22 +119,31 @@ async def admin_process_user_lookup(message: types.Message, state: FSMContext, s
 
 @router.message(Command("gerarkey"))
 async def cmd_gerarkey(message: types.Message, session: AsyncSession):
-    if not is_admin(message.from_user.id): return
+    if not is_admin(message.from_user.id):
+        logger.warning(f"Usuário {message.from_user.id} tentou usar /gerarkey sem permissão.")
+        return
     
     try:
         args = message.text.split()
         if len(args) != 3:
-            await message.answer("❌ Use: /gerarkey (quantidade) (saldo)")
+            await message.answer("❌ Use: <code>/gerarkey (quantidade) (saldo)</code>", parse_mode="HTML")
             return
             
         amount = int(args[1])
         balance = int(args[2])
         
+        if amount <= 0 or amount > 50:
+            await message.answer("❌ Quantidade deve ser entre 1 e 50.")
+            return
+            
         keys = []
         for _ in range(amount):
             key_code = await KeyService.generate_key(session, balance)
             keys.append(f"<code>{key_code}</code>")
             
-        await message.answer(f"✅ <b>{amount} Keys Geradas:</b>\n\n" + "\n".join(keys), parse_mode="HTML")
+        await session.commit()
+        
+        await message.answer(f"✅ <b>{amount} Keys Geradas (Saldo: {balance}):</b>\n\n" + "\n".join(keys), parse_mode="HTML")
     except Exception as e:
-        await message.answer(f"❌ Erro: {str(e)}")
+        logger.error(f"Erro no comando /gerarkey: {e}")
+        await message.answer(f"❌ Erro ao processar o comando. Verifique os parâmetros.")

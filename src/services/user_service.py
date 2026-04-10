@@ -24,14 +24,13 @@ class UserService:
         if not user:
             user = User(id=user_id, full_name=full_name, username=username)
             session.add(user)
-            await session.commit()
-            user = await UserService.get_user(session, user_id)
+            await session.flush() # Usa flush em vez de commit para manter a transação aberta
         else:
             # Atualiza nome/username se mudou
             if user.full_name != full_name or user.username != username:
                 user.full_name = full_name
                 user.username = username
-                await session.commit()
+                await session.flush()
         return user
 
     @staticmethod
@@ -83,7 +82,7 @@ class KeyService:
         
         new_key = Key(code=code, value=value)
         session.add(new_key)
-        await session.commit()
+        await session.flush() # Usa flush para garantir que a key seja adicionada à sessão sem fechar a transação
         return code
 
     @staticmethod
