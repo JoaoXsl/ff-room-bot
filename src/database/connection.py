@@ -18,7 +18,7 @@ engine = create_async_engine(
     connect_args={
         "server_settings": {"application_name": "FF_Room_Bot"},
         "command_timeout": 30,
-        "ssl": True # Forçar uso de SSL para Square Cloud, conforme sugerido
+        "ssl": True # Solução testada e funcional para Square Cloud
     }
 )
 
