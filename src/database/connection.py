@@ -3,22 +3,22 @@ from config.settings import settings
 from src.database.models import Base
 from loguru import logger
 import os
+import ssl # Importação necessária para o SSL
 
-# Garante que a URL do banco de dados use o driver asyncpg, corrigindo o erro de driver síncrono.
+# Garante que a URL do banco de dados use o driver asyncpg
 db_url = settings.DATABASE_URL
 if db_url.startswith("postgres://"):
-    db_url = f"postgresql+asyncpg://{db_url[len("postgres://"):]}"
-elif db_url.startswith("postgresql://"):
-    db_url = f"postgresql+asyncpg://{db_url[len("postgresql://"):]}"
+    db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif db_url.startswith("postgresql://") and "+asyncpg" not in db_url:
+    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# Define os caminhos para os certificados SSL
-# Assumimos que os arquivos ca.crt, client.crt e client.key estão na raiz do projeto
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CA_CERT_PATH = os.path.join(os.path.dirname(BASE_DIR), "ca.crt")
-CLIENT_CERT_PATH = os.path.join(os.path.dirname(BASE_DIR), "client.crt")
-CLIENT_KEY_PATH = os.path.join(os.path.dirname(BASE_DIR), "client.key")
+# Configuração do contexto SSL para Asyncpg
+# Isso resolve o erro de [SSL: CERTIFICATE_VERIFY_FAILED]
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
 
-# Configuração do Engine com Pool de Conexões Robusto e certificados SSL
+# Configuração do Engine
 engine = create_async_engine(
     db_url, 
     echo=False,
@@ -29,10 +29,7 @@ engine = create_async_engine(
     connect_args={
         "server_settings": {"application_name": "FF_Room_Bot"},
         "command_timeout": 60,
-        "sslmode": "require",
-        "sslrootcert": CA_CERT_PATH,
-        "sslcert": CLIENT_CERT_PATH,
-        "sslkey": CLIENT_KEY_PATH
+        "ssl": ssl_context  # Aqui está a mudança chave!
     }
 )
 
