@@ -1,9 +1,10 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from config.settings import settings
-from src.database.models import Base
+from src.database.models import Base, User, Key
 from loguru import logger
 import os
 import ssl
+from sqlalchemy import text
 
 # 1. Tratamento da URL
 db_url = settings.DATABASE_URL
@@ -56,9 +57,22 @@ async def init_db():
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        logger.info("✅ Banco de dados inicializado com sucesso.")
+            
+            # Migração: Adicionar coluna notifications_enabled à tabela users se não existir
+            result = await conn.execute(text("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name=\'users\' AND column_name=\'notifications_enabled\')"))
+            if not result.scalar():
+                logger.info("Migrando: Adicionando coluna 'notifications_enabled' à tabela 'users'.")
+                await conn.execute(text(f"ALTER TABLE users ADD COLUMN notifications_enabled BOOLEAN DEFAULT {User.notifications_enabled.default.arg} NOT NULL"))
+
+            # Migração: Adicionar coluna is_removed à tabela keys se não existir
+            result = await conn.execute(text("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name=\'keys\' AND column_name=\'is_removed\')"))
+            if not result.scalar():
+                logger.info("Migrando: Adicionando coluna 'is_removed' à tabela 'keys'.")
+                await conn.execute(text(f"ALTER TABLE keys ADD COLUMN is_removed BOOLEAN DEFAULT {Key.is_removed.default.arg} NOT NULL"))
+
+        logger.info("✅ Banco de dados inicializado e migrações aplicadas com sucesso.")
     except Exception as e:
-        logger.error(f"❌ Erro ao inicializar banco de dados: {str(e)}")
+        logger.error(f"❌ Erro ao inicializar banco de dados ou aplicar migrações: {str(e)}")
         raise e
 
 async def get_session() -> AsyncSession:
