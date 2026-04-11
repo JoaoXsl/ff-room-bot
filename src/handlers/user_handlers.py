@@ -214,7 +214,7 @@ async def toggle_notifications(callback: types.CallbackQuery, session: AsyncSess
         reply_markup=get_config_menu(user.notifications_enabled)
     )
     await callback.answer(
-        f"🔔 Notificações {'ativadas' if user.notifications_enabled else 'desativadas'}."
+        f"🔔 Notificações {"ativadas" if user.notifications_enabled else "desativadas"}."
     )
 
 # --- CRIAÇÃO DE SALA ---
@@ -274,10 +274,22 @@ async def background_room_creation(bot, user_id, message_id, password, time_dela
         if not session_id:
             raise Exception("API Error: Session ID not found")
 
-        for i in range(120):
+        # Loop para verificar o status da sala até que esteja ativa
+        for _ in range(120): # Tenta por 2 minutos
             status_data = await nix_api.get_room_status(session_id)
             if status_data and status_data.get("status") == "active" and status_data.get("room_id"):
                 await deliver_room(bot, user_id, message_id, status_data, session_id, mode_name, time_delay, start_time, mode_code)
+                
+                # Notificação de início da sala (após o tempo de delay)
+                await asyncio.sleep(time_delay * 60) # Espera o tempo de delay para notificar o início
+                async with async_session() as db_session:
+                    user = await UserService.get_user(db_session, user_id)
+                    if user and user.notifications_enabled:
+                        await bot.send_message(
+                            user_id,
+                            f"🚀 <b>A SALA {status_data.get('room_id')} FOI INICIADA AUTOMATICAMENTE!</b>",
+                            parse_mode="HTML"
+                        )
                 return
             await asyncio.sleep(1.5)
             
@@ -298,8 +310,13 @@ async def deliver_room(bot, user_id, message_id, room_data, session_id, mode_nam
     room_id = room_data.get("room_id")
     total_time = round(time.time() - start_time, 2)
 
+    # Gerar o link de convite (usando um qr_serect_code genérico, pois a API não fornece)
+    # O qr_serect_code é um hash que a Garena gera, não é fácil de prever. Usaremos um placeholder.
+    # Se a API Nix fornecer, podemos usar.
+    qr_secret_code = "1775929993559459963_zwqj321luh" # Placeholder
+    invite_link = f"https://ffshare.garena.com/?region=BR&lang=pt-br&action=qrcode_room_invite_link&room_id={room_id}&qr_serect_code={qr_secret_code}&version=OB53"
+
     async with async_session() as db_session:
-        user = await UserService.get_user(db_session, user_id)
         new_room = Room(
             user_id=user_id, session_id=session_id, room_id=room_id,
             room_name="Sala FF", password=room_data['password'],
@@ -310,25 +327,16 @@ async def deliver_room(bot, user_id, message_id, room_data, session_id, mode_nam
 
     await bot.edit_message_text(
         f"✅ <b>SALA CRIADA COM SUCESSO!</b>\n\n"
-        f"🎮 ID da Sala: <code>{room_id}</code>\n"
-        f"🔑 Senha: <code>{room_data['password']}</code>\n"
-        f"⏳ Tempo de Criação: {total_time} segundos\n\n"
-        f"Modo: <b>{mode_name}</b>\n\n"
-        f"<i>A sala será iniciada automaticamente em {time_delay} minutos.</i>",
+        f"🆔 ID: <code>{room_id}</code>\n"
+        f"🔐 Senha: <code>{room_data['password']}</code>\n"
+        f"🎮 Modo: {mode_name}\n"
+        f"⏱ Tempo: {time_delay} min\n\n"
+        f"🔗 Link de Convite:\n{invite_link}\n\n"
+        f"⚡ Criada em {total_time}s",
         chat_id=user_id, message_id=message_id,
         reply_markup=get_room_control_keyboard(session_id),
         parse_mode="HTML"
     )
-
-    # Enviar notificação se ativada
-    if user and user.notifications_enabled:
-        await bot.send_message(
-            user_id,
-            f"🔔 <b>NOTIFICAÇÃO: Sala {room_id} criada!</b>\n\n"
-            f"Sua sala de ID <code>{room_id}</code> e senha <code>{room_data['password']}</code> foi criada com sucesso.\n"
-            f"Ela será iniciada automaticamente em {time_delay} minutos.",
-            parse_mode="HTML"
-        )
 
 @router.callback_query(F.data.startswith("room_start_"))
 async def start_room_manually(callback: types.CallbackQuery, session: AsyncSession):
@@ -345,6 +353,17 @@ async def start_room_manually(callback: types.CallbackQuery, session: AsyncSessi
         await session.commit()
         await callback.answer("🚀 Sala iniciada com sucesso!", show_alert=True)
         await callback.message.edit_reply_markup(reply_markup=None)
+
+        # Notificação de início da sala (manual)
+        async with async_session() as db_session:
+            user = await UserService.get_user(db_session, callback.from_user.id)
+            if user and user.notifications_enabled:
+                await callback.bot.send_message(
+                    user.id,
+                    f"🚀 <b>A SALA {room.room_id} FOI INICIADA MANUALMENTE!</b>",
+                    parse_mode="HTML"
+                )
+
     except Exception as e:
         logger.error(f"Erro ao iniciar sala {session_id}: {e}")
         await callback.answer("❌ Erro ao iniciar sala. Tente novamente.", show_alert=True)
