@@ -75,6 +75,7 @@ async def cmd_start(message: types.Message, session: AsyncSession):
 
 @router.callback_query(F.data == "main_menu")
 async def back_to_main(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession):
+    # Não limpamos o estado aqui para manter a senha e o tempo salvos
     text = await get_global_panel_text(session)
     try:
         await callback.message.edit_text(text, reply_markup=get_main_menu(), parse_mode="HTML")
@@ -111,11 +112,10 @@ async def show_balance(callback: types.CallbackQuery, session: AsyncSession):
     await callback.message.edit_text(text, reply_markup=get_back_button(), parse_mode="HTML")
 
 @router.callback_query(F.data == "config_menu")
-async def show_config_menu(callback: types.CallbackQuery, session: AsyncSession):
-    user = await UserService.get_user(session, callback.from_user.id)
+async def show_config_menu(callback: types.CallbackQuery):
     await callback.message.edit_text(
         "⚙️ <b>CONFIGURAÇÕES</b>\n\nAjuste as preferências das suas salas abaixo:",
-        reply_markup=get_config_menu(user.notifications_enabled if user else True),
+        reply_markup=get_config_menu(),
         parse_mode="HTML"
     )
 
@@ -195,27 +195,9 @@ async def process_key(message: types.Message, state: FSMContext, session: AsyncS
     
     if success:
         await message.answer(f"✅ {msg}", reply_markup=get_main_menu())
-        await state.set_state(None)
+        await state.set_state(None) # Limpa apenas o estado de espera da key
     else:
         await message.answer(f"❌ {msg}\n\nTente novamente ou clique em voltar.", reply_markup=get_back_button())
-
-# --- NOTIFICAÇÕES ---
-@router.callback_query(F.data == "toggle_notifications")
-async def toggle_notifications(callback: types.CallbackQuery, session: AsyncSession):
-    user = await UserService.get_user(session, callback.from_user.id, for_update=True)
-    if not user:
-        await callback.answer("❌ Usuário não encontrado!", show_alert=True)
-        return
-
-    user.notifications_enabled = not user.notifications_enabled
-    await session.commit()
-
-    await callback.message.edit_reply_markup(
-        reply_markup=get_config_menu(user.notifications_enabled)
-    )
-    await callback.answer(
-        f"🔔 Notificações {'ativadas' if user.notifications_enabled else 'desativadas'}."
-    )
 
 # --- CRIAÇÃO DE SALA ---
 @router.callback_query(F.data == "create_room_start")
@@ -277,7 +259,7 @@ async def background_room_creation(bot, user_id, message_id, password, time_dela
         for i in range(120):
             status_data = await nix_api.get_room_status(session_id)
             if status_data and status_data.get("status") == "active" and status_data.get("room_id"):
-                await deliver_room(bot, user_id, message_id, status_data, session_id, mode_name, time_delay, start_time, mode_code)
+                await deliver_room(bot, user_id, message_id, status_data, session_id, mode_name, time_delay, start_time)
                 return
             await asyncio.sleep(1.5)
             
@@ -294,88 +276,62 @@ async def background_room_creation(bot, user_id, message_id, password, time_dela
                                         reply_markup=get_back_button(), parse_mode="HTML")
         except: pass
 
-async def deliver_room(bot, user_id, message_id, room_data, session_id, mode_name, time_delay, start_time, mode_code):
+async def deliver_room(bot, user_id, message_id, room_data, session_id, mode_name, time_delay, start_time):
     room_id = room_data.get("room_id")
     total_time = round(time.time() - start_time, 2)
 
     async with async_session() as db_session:
-        user = await UserService.get_user(db_session, user_id)
         new_room = Room(
             user_id=user_id, session_id=session_id, room_id=room_id,
             room_name="Sala FF", password=room_data['password'],
-            config_type=mode_code, status="active"
+            config_type=mode_name, status="active"
         )
         db_session.add(new_room)
         await db_session.commit()
 
-    await bot.edit_message_text(
-        f"✅ <b>SALA CRIADA COM SUCESSO!</b>\n\n"
-        f"🎮 ID da Sala: <code>{room_id}</code>\n"
-        f"🔑 Senha: <code>{room_data['password']}</code>\n"
-        f"⏳ Tempo de Criação: {total_time} segundos\n\n"
-        f"Modo: <b>{mode_name}</b>\n\n"
-        f"<i>A sala será iniciada automaticamente em {time_delay} minutos.</i>",
-        chat_id=user_id, message_id=message_id,
-        reply_markup=get_room_control_keyboard(session_id),
-        parse_mode="HTML"
+    text = (
+        "✅ <b>SALA CRIADA COM SUCESSO!</b>\n\n"
+        f"🆔 ID: <code>{room_id}</code>\n"
+        f"🔐 Senha: <code>{room_data['password']}</code>\n"
+        f"🎮 Modo: <b>{mode_name}</b>\n"
+        f"⏱ Tempo: <b>{time_delay} min</b>\n\n"
+        f"🔗 <b>Link de Convite:</b>\n{room_data['invite_link']}\n\n"
+        f"⚡ <i>Criada em {total_time}s</i>"
     )
+    
+    await bot.edit_message_text(text, chat_id=user_id, message_id=message_id, 
+                                reply_markup=get_room_control_keyboard(session_id), parse_mode="HTML")
 
-    # Enviar notificação se ativada
-    if user and user.notifications_enabled:
-        await bot.send_message(
-            user_id,
-            f"🔔 <b>NOTIFICAÇÃO: Sala {room_id} criada!</b>\n\n"
-            f"Sua sala de ID <code>{room_id}</code> e senha <code>{room_data['password']}</code> foi criada com sucesso.\n"
-            f"Ela será iniciada automaticamente em {time_delay} minutos.",
-            parse_mode="HTML"
-        )
-
-@router.callback_query(F.data.startswith("room_start_"))
-async def start_room_manually(callback: types.CallbackQuery, session: AsyncSession):
-    session_id = callback.data.replace("room_start_", "")
-    room = await session.scalar(select(Room).where(Room.session_id == session_id))
-
-    if not room:
-        await callback.answer("❌ Sala não encontrada ou já iniciada.", show_alert=True)
-        return
-
-    try:
-        await nix_api.start_room(session_id)
-        room.status = "started"
-        await session.commit()
-        await callback.answer("🚀 Sala iniciada com sucesso!", show_alert=True)
-        await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception as e:
-        logger.error(f"Erro ao iniciar sala {session_id}: {e}")
-        await callback.answer("❌ Erro ao iniciar sala. Tente novamente.", show_alert=True)
-
+# --- CONTROLES DE SALA ---
 @router.callback_query(F.data.startswith("room_kick_"))
 async def start_kick_player(callback: types.CallbackQuery, state: FSMContext):
     session_id = callback.data.replace("room_kick_", "")
-    await state.update_data(current_room_session_id=session_id)
-    await callback.message.edit_text(
-        "🚫 <b>EXPULSAR JOGADOR</b>\n\nEnvie o UID do jogador para expulsar da sala:",
-        reply_markup=get_back_button(),
-        parse_mode="HTML"
-    )
+    await state.update_data(kick_session_id=session_id)
+    await callback.message.answer("🚫 <b>Expulsar Jogador</b>\n\nEnvie o <b>UID</b> do jogador:", parse_mode="HTML")
     await state.set_state(UserStates.waiting_for_kick_uid)
 
 @router.message(UserStates.waiting_for_kick_uid)
-async def process_kick_player(message: types.Message, state: FSMContext):
+async def process_kick_uid(message: types.Message, state: FSMContext):
     uid = message.text.strip()
     data = await state.get_data()
-    session_id = data.get("current_room_session_id")
-
-    if not session_id:
-        await message.answer("❌ Nenhuma sala selecionada para expulsar jogador.", reply_markup=get_main_menu())
-        await state.clear()
+    session_id = data.get("kick_session_id")
+    
+    if not uid.isdigit():
+        await message.answer("❌ UID inválido.")
         return
+        
+    success = await nix_api.kick_player(session_id, uid)
+    if success:
+        await message.answer(f"✅ Expulsão enviada para UID: <code>{uid}</code>", parse_mode="HTML")
+    else:
+        await message.answer("❌ Erro ao expulsar.")
+    await state.set_state(None)
 
-    try:
-        await nix_api.kick_player(session_id, uid)
-        await message.answer(f"✅ Jogador com UID <code>{uid}</code> expulso da sala <code>{session_id}</code>.", parse_mode="HTML")
-    except Exception as e:
-        logger.error(f"Erro ao expulsar jogador {uid} da sala {session_id}: {e}")
-        await message.answer("❌ Erro ao expulsar jogador. Verifique o UID e tente novamente.", reply_markup=get_back_button())
-    finally:
-        await state.clear()
+@router.callback_query(F.data.startswith("room_start_"))
+async def process_start_room(callback: types.CallbackQuery):
+    session_id = callback.data.replace("room_start_", "")
+    success = await nix_api.start_room(session_id)
+    if success:
+        await callback.answer("🚀 Sala iniciada!", show_alert=True)
+    else:
+        await callback.answer("❌ Erro ao iniciar.", show_alert=True)

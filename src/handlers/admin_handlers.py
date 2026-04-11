@@ -16,7 +16,6 @@ class AdminStates(StatesGroup):
     waiting_for_gen_key = State()
     waiting_for_user_id = State()
     waiting_for_adj_balance = State()
-    waiting_for_remove_key = State()
 
 def is_admin(user_id: int) -> bool:
     return user_id in settings.ADMIN_IDS
@@ -154,51 +153,3 @@ async def cmd_gerarkey(message: types.Message, session: AsyncSession):
         logger.error(f"Erro no comando /gerarkey: {e}")
         await session.rollback()
         await message.answer(f"❌ Erro ao processar o comando. Verifique os parâmetros.")
-
-@router.callback_query(F.data == "admin_remove_key")
-async def admin_start_remove_key(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id): return
-    
-    await callback.message.edit_text(
-        "🗑️ <b>REMOVER KEY</b>\n\nEnvie o código da key que deseja remover:",
-        reply_markup=get_back_button(),
-        parse_mode="HTML"
-    )
-    await state.set_state(AdminStates.waiting_for_remove_key)
-
-@router.message(AdminStates.waiting_for_remove_key)
-async def admin_process_remove_key(message: types.Message, state: FSMContext, session: AsyncSession):
-    if not is_admin(message.from_user.id): return
-    
-    code = message.text.strip()
-    success, msg = await KeyService.remove_key(session, code)
-    
-    if success:
-        await message.answer(f"✅ {msg}", reply_markup=get_admin_menu())
-        await state.clear()
-    else:
-        await message.answer(f"❌ {msg}\n\nTente novamente ou clique em voltar.", reply_markup=get_back_button())
-
-@router.message(Command("removekey"))
-async def cmd_removekey(message: types.Message, session: AsyncSession):
-    if not is_admin(message.from_user.id):
-        logger.warning(f"Usuário {message.from_user.id} tentou usar /removekey sem permissão.")
-        return
-    
-    try:
-        args = message.text.split()
-        if len(args) != 2:
-            await message.answer("❌ Use: <code>/removekey (código da key)</code>", parse_mode="HTML")
-            return
-            
-        code = args[1]
-        success, msg = await KeyService.remove_key(session, code)
-        
-        if success:
-            await message.answer(f"✅ {msg}", parse_mode="HTML")
-        else:
-            await message.answer(f"❌ {msg}", parse_mode="HTML")
-    except Exception as e:
-        logger.error(f"Erro no comando /removekey: {e}")
-        await session.rollback()
-        await message.answer(f"❌ Erro ao processar o comando. Verifique os parâmetros.", parse_mode="HTML")

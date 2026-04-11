@@ -95,24 +95,20 @@ class KeyService:
         
         logger.info(f"🎟️ Tentativa de resgate: Usuário {user_id} enviou '{code}', processado como '{clean_code}'")
         
-        # Lock na chave para evitar uso duplo simultâneo e verificar se não foi removida
-        stmt = select(Key).where(Key.code == clean_code, Key.is_used == False, Key.is_removed == False).with_for_update()
+        # Lock na chave para evitar uso duplo simultâneo
+        stmt = select(Key).where(Key.code == clean_code, Key.is_used == False).with_for_update()
         result = await session.execute(stmt)
         key = result.scalar_one_or_none()
         
         if not key:
-            # Verifica se a key existe mas já foi usada ou removida
+            # Verifica se a key existe mas já foi usada
             check_stmt = select(Key).where(Key.code == clean_code)
             check_result = await session.execute(check_stmt)
             existing_key = check_result.scalar_one_or_none()
             
             if existing_key:
-                if existing_key.is_used:
-                    logger.warning(f"❌ Key '{clean_code}' já foi utilizada pelo usuário {existing_key.used_by}")
-                    return False, "Esta key já foi utilizada."
-                elif existing_key.is_removed:
-                    logger.warning(f"❌ Key '{clean_code}' foi removida e não pode ser usada.")
-                    return False, "Esta key foi desativada."
+                logger.warning(f"❌ Key '{clean_code}' já foi utilizada pelo usuário {existing_key.used_by}")
+                return False, "Esta key já foi utilizada."
             else:
                 logger.warning(f"❌ Key '{clean_code}' não encontrada no banco de dados.")
                 return False, "Key inválida ou inexistente."
@@ -139,43 +135,3 @@ class KeyService:
         await session.commit()
         logger.info(f"✅ Key '{clean_code}' resgatada com sucesso pelo usuário {user_id}. +{key.value} salas.")
         return True, f"Key resgatada com sucesso! +{key.value} salas adicionadas."
-
-    @staticmethod
-    async def remove_key(session: AsyncSession, code: str) -> Tuple[bool, str]:
-        clean_code = re.sub(r'[^A-Z0-9\-]', '', code.strip().upper())
-        logger.info(f"🗑️ Tentativa de remoção de key: '{clean_code}'")
-
-        stmt = select(Key).where(Key.code == clean_code).with_for_update()
-        result = await session.execute(stmt)
-        key = result.scalar_one_or_none()
-
-        if not key:
-            logger.warning(f"❌ Key '{clean_code}' não encontrada para remoção.")
-            return False, "Key não encontrada."
-
-        if key.is_removed:
-            logger.warning(f"❌ Key '{clean_code}' já foi removida.")
-            return False, "Esta key já foi removida."
-
-        key.is_removed = True
-
-        if key.is_used and key.used_by:
-            user = await UserService.get_user(session, key.used_by, for_update=True)
-            if user:
-                # Garante que o saldo não fique negativo
-                deduction_amount = min(key.value, user.balance)
-                user.balance -= deduction_amount
-                transaction = Transaction(
-                    user_id=user.id,
-                    amount=-deduction_amount,
-                    type='admin_adjustment',
-                    description=f"Remoção de key '{clean_code}' (saldo deduzido)"
-                )
-                session.add(transaction)
-                logger.info(f"✅ Saldo de {deduction_amount} deduzido do usuário {user.id} pela remoção da key '{clean_code}'")
-            else:
-                logger.warning(f"⚠️ Usuário {key.used_by} da key '{clean_code}' não encontrado para deduzir saldo.")
-
-        await session.commit()
-        logger.info(f"✅ Key '{clean_code}' removida com sucesso.")
-        return True, f"Key '{clean_code}' removida com sucesso. Saldo ajustado se aplicável."

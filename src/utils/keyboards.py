@@ -20,14 +20,12 @@ def get_main_menu() -> InlineKeyboardMarkup:
     builder.adjust(3, 3, 1)
     return builder.as_markup()
 
-def get_config_menu(notifications_enabled: bool = True) -> InlineKeyboardMarkup:
-    notifications_text = "🔔 Notificações: ON" if notifications_enabled else "🔕 Notificações: OFF"
+def get_config_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="🔐 Config Senha", callback_data="config_pass")
     builder.button(text="⏱ Config Time", callback_data="config_time")
-    builder.button(text=notifications_text, callback_data="toggle_notifications")
     builder.button(text="« Voltar", callback_data="main_menu")
-    builder.adjust(2, 1, 1)
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 def get_mode_selection_keyboard() -> InlineKeyboardMarkup:
@@ -61,10 +59,9 @@ def get_admin_menu() -> InlineKeyboardMarkup:
     builder.button(text="🔑 Gerar Key", callback_data="admin_gen_key")
     builder.button(text="👥 Usuários", callback_data="admin_users")
     builder.button(text="💰 Ajustar Saldo", callback_data="admin_adj_balance")
-    builder.button(text="🗑️ Remover Key", callback_data="admin_remove_key")
     builder.button(text="📜 Logs Gerais", callback_data="admin_logs")
     builder.button(text="🏠 Menu Principal", callback_data="main_menu")
-    builder.adjust(2, 2, 2, 1)
+    builder.adjust(2, 2, 1)
     return builder.as_markup()
 
 def get_back_button() -> InlineKeyboardMarkup:

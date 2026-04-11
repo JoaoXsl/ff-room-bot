@@ -14,7 +14,6 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(255))
     balance: Mapped[int] = mapped_column(Integer, default=0)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
-    notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     # lazy="noload" para evitar queries implícitas pesadas; carregar explicitamente quando necessário
@@ -29,7 +28,6 @@ class Key(Base):
     code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     value: Mapped[int] = mapped_column(Integer) # Quantidade de salas/saldo
     is_used: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    is_removed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     used_by: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("users.id"), index=True)
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
